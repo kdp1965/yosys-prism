@@ -8,7 +8,7 @@ class PrismImpl;
 class Prism {
 	PrismImpl *impl;
 public:
-	enum Format { HEX, LIST, TAB, CFILE };
+	enum Format { HEX, LIST, TAB, CFILE, PYTHON };
   std::string  module_name;
 
 	Prism(void);

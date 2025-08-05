@@ -34,7 +34,7 @@ struct StateTransition : public StateCondition {
 
 	bool isFallthrough(unsigned int in)
 	{
-		if (state != in)
+		if (state != in && state != in+1)
 			return false;
 
 		return dynamic_cast<LogicTrueExpression *>(expr) != NULL;

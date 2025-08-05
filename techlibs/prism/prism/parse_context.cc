@@ -92,7 +92,7 @@ void ParseContextTree::State::collectConditionalOutputs(
 
 ParseContextTree::ParseContextTree(void)
  : activeState(NULL), defaultState(NULL), current(new Leaf()), parent(NULL)
-{ }
+{ m_ctrlReg = 0;}
 
 ParseContextTree::~ParseContextTree(void)
 {
@@ -156,7 +156,7 @@ void ParseContextTree::assign(unsigned int bit, bool value)
 {
 	// is this a conditional output?
 	// FIXME: this 0x10000 thing is hacky
-	if (bit >= 0x10000) {
+	if (bit >= 0x10000 && bit < 0x20000) {
 		LogicExpression *expr = NULL;
 		// collapse conditional
 		for (Branch *p = parent; p != NULL;
@@ -188,6 +188,9 @@ void ParseContextTree::assign(unsigned int bit, bool value)
 		} else {
 			activeState->mergeConditionalOutput(bit, expr, value);
 		}
+   } else if (bit >= 0x20000) {
+      bit -= 0x20000;
+      m_ctrlReg |= value << bit;
 	} else {
 		current->assign(bit, value);
 	}
@@ -268,13 +271,15 @@ void ParseContextTree::collectStateRecurse(std::list<std::shared_ptr<StateTransi
 	}
 }
 
-void ParseContextTree::writeStates(Bitmask &out, const STEW &stew, const DecisionTree &tree) const
+void ParseContextTree::writeStates(Bitmask &out, const STEW &stew, const DecisionTree &tree,
+      uint32_t &ctrlReg) const
 {
 	std::list<std::shared_ptr<VirtualState>> outputStates;
 	std::map<unsigned int, unsigned int> stateMap;
 	unsigned int index;
 	const Node *root;
 
+   ctrlReg = m_ctrlReg;
 	for (root = current; root->parent != NULL; root = root->parent);
 
 	// collect and split all specified states

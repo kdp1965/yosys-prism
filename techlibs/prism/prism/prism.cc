@@ -45,6 +45,8 @@ public:
 			ASSERT_NODE(node, node.is_output, "`cond_out` must be an output");
 		} else if (node.str == "\\version") {
       DEBUG("Version found\n");
+		} else if (node.str == "\\ctrl_reg") {
+			grp = new OffsetBitGroup(0x20000, node.range_left - node.range_right + 1);
 		} else {
 			// ignore other wires until they show up in an assign
 			return;
@@ -418,9 +420,9 @@ public:
 		}
 	}
 
-	void write(Bitmask &out, const STEW &stew, const DecisionTree &tree)
+	void write(Bitmask &out, const STEW &stew, const DecisionTree &tree, uint32_t &ctrlReg)
 	{
-		parseContextTree.writeStates(out, stew, tree);
+		parseContextTree.writeStates(out, stew, tree, ctrlReg);
 	}
 };
 
@@ -502,12 +504,14 @@ class PrismImpl {
   std::string config;
 	const STEW stewConfig;
 	const InputMux::Config muxConfig;
+  uint32_t  ctrlReg;
 public:
 	PrismImpl(const PrismConfig &cfg)
 	 : tree(cfg.tree), output(cfg.stew.size * cfg.stew.count), stewConfig(cfg.stew),
 	   muxConfig(cfg.tree.wires.muxes)
 	{ 
     config = cfg.config;
+    ctrlReg = 0;
   }
 
 	void parseAst(const AstNode &root)
@@ -515,7 +519,7 @@ public:
 		AstProcessor proc;
 
 		proc.processGlobalNode(root);
-		proc.write(output, stewConfig, tree);
+		proc.write(output, stewConfig, tree, ctrlReg);
 	}
 
 	void writeTabOutput(std::ostream &os)
@@ -629,9 +633,83 @@ public:
       os << "\n";
     }
     os << "\n};\n";
-    os << strutil::format("const uint32_t %s_count = %d;\n", ::module_name.c_str(), count);
-    os << strutil::format("const uint32_t %s_width = %d;\n", ::module_name.c_str(),
+    os << strutil::format("const uint32_t %s_count   = %d;\n", ::module_name.c_str(), count);
+    os << strutil::format("const uint32_t %s_width   = %d;\n", ::module_name.c_str(),
                 stewConfig.size);
+    os << strutil::format("const uint32_t %s_ctrlReg = 0x%08X;\n",  ::module_name.c_str(), ctrlReg);
+	}
+
+	void writePythonOutput(std::ostream &os)
+	{
+		ASSERT(!(output.size() & 0x7), "Output size is not a multiple of 8 bits");
+
+    os << "'''\n";
+    os << "==============================================================\n";
+    os << "PRISM Downloadable Configuration\n\n";
+    os << strutil::format("Input:    %s.sv\n", ::module_name.c_str());
+    //os << strutil::format("Version:  %s\n", .c_str());
+    os << strutil::format("Config:   %s\n", basename(config).c_str());
+    os << "==============================================================\n";
+    os << "'''\n";
+    os << strutil::format("%s = [\n", ::module_name.c_str());
+
+    unsigned int count = 0;
+    for (int word = stewConfig.count - 1; word >= 0; --word) {
+      BitmaskSlice slice(output,
+          (stewConfig.count - word - 1) * stewConfig.size,
+          stewConfig.size);
+
+      unsigned int bits = slice.size();
+      unsigned int bit = 0;
+      unsigned int nibble;
+      char         str[9];
+      int          strIdx = 6;
+      std::vector<std::string> wordList;
+
+      strcpy(str, "00000000");
+      for (nibble = 0; bit < bits; nibble += 2) {
+        unsigned char c;
+
+        c = slice.nibble(bit+4);
+        if (c <= 9)
+            c += '0';
+        else
+            c += 'a' - 0xa;
+        str[strIdx] = c;
+        c = slice.nibble(bit);
+        if (c <= 9)
+            c += '0';
+        else
+            c += 'a' - 0xa;
+        str[strIdx+1] = c;
+        strIdx -= 2;
+
+        bit += 8;
+
+        if (nibble && (nibble % 8 == 6))
+        {
+          wordList.push_back(str);
+          strcpy(str, "00000000");
+          strIdx = 6;
+          count++;
+        }
+      }
+      if (strIdx != 6)
+        wordList.push_back(str);
+
+      // Output words to the file for this 
+      os << "   ";
+      for (int i = wordList.size() - 1; i >= 0; i--)
+      {
+        os << "0x";
+        os << wordList[i];
+        os << ", ";
+      }
+      os << "\n";
+    }
+    os << "]\n";
+
+    os << strutil::format("%s_ctrlReg = 0x%08X\n",  ::module_name.c_str(), ctrlReg);
 	}
 
 	void writeListOutput(std::ostream &os)
@@ -784,6 +862,8 @@ bool Prism::writeOutput(Prism::Format fmt, std::ostream &os)
 			impl->writeListOutput(os);
 		else if (fmt == Prism::CFILE)
 			impl->writeCOutput(os);
+		else if (fmt == Prism::PYTHON)
+			impl->writePythonOutput(os);
 		else
 			return false;
 	} catch (Assertion &e) {

@@ -37,7 +37,11 @@ void DecisionTree::splitState(std::list<std::shared_ptr<VirtualState>> &out,
 
 		// if there's only the fallthrough left, no split is needed
 		if (xits.size() == nStaticComponents + 1 && xits.back()->isFallthrough(vs->index))
+      {
+         if (vs->index+1 == xits.back()->state)
+		      vs->partial = true;
 			break;
+      }
 
 		auto it = xits.begin();
 		std::advance(it, nStaticComponents);

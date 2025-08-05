@@ -86,8 +86,13 @@ struct SynthPrismPass : public Pass
 		log("\n");
 		log("    -tab <file>\n");
 		log("        write the PRISM table to the specified file.\n");
+		log("\n");
 		log("    -cfile <file>\n");
 		log("        write the PRISM table in compilable C to the specified file.\n");
+		log("\n");
+		log("    -py <file>\n");
+		log("        write the PRISM table in Python array format to the specified file.\n");
+		log("\n");
 		log("\n");
 	}
 
@@ -128,6 +133,10 @@ struct SynthPrismPass : public Pass
 			}
 			if (args[argidx] == "-cfile" && argidx+1 < args.size()) {
 				outputs.push_back(make_file(args[++argidx], Prism::CFILE));
+				continue;
+			}
+			if (args[argidx] == "-py" && argidx+1 < args.size()) {
+				outputs.push_back(make_file(args[++argidx], Prism::PYTHON));
 				continue;
 			}
 			if (args[argidx] == "-cfg" && argidx+1 < args.size()) {
