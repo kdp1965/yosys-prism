@@ -40,6 +40,25 @@ struct StateTransition : public StateCondition {
 		return dynamic_cast<LogicTrueExpression *>(expr) != NULL;
 	}
 
+	// unconditional transition back to the same state ("stay"): encoded on
+	// the STEW's default (no-match) path
+	bool isStay(unsigned int in)
+	{
+		if (state != in)
+			return false;
+		return dynamic_cast<LogicTrueExpression *>(expr) != NULL;
+	}
+
+	// unconditional transition to the next state ("else next"): encoded with
+	// the INC bit, which in hardware also starts / continues the automatic
+	// loop (a later state with no match returns to the first INC state)
+	bool isNext(unsigned int in)
+	{
+		if (state != in + 1)
+			return false;
+		return dynamic_cast<LogicTrueExpression *>(expr) != NULL;
+	}
+
 	void writeOutput(Bitmask &out) const
 	{
 		for (unsigned int i = 0; i < out.size(); ++i)
@@ -76,13 +95,14 @@ struct VirtualState {
 	unsigned int index;
 	FilePos filepos;
 	bool partial;
+	unsigned int row;   // STEW row this (partial) state is written to
 	DynamicBitmask partialOutput;
 
 	std::list<std::shared_ptr<StateTransition>> transitions;
 	std::list<std::shared_ptr<ConditionalOutput>> conditionalOutputs;
 
 	VirtualState(unsigned int id, const FilePos &pos)
-	 : index(id), filepos(pos), partial(false)
+	 : index(id), filepos(pos), partial(false), row(0)
 	{ }
 
 	void collectSteadyState(Bitmask &out)

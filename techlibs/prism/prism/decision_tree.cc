@@ -35,13 +35,18 @@ void DecisionTree::splitState(std::list<std::shared_ptr<VirtualState>> &out,
 	while (vs->transitions.size() > nStaticComponents) {
 		std::list<std::shared_ptr<StateTransition>> &xits = vs->transitions;
 
-		// if there's only the fallthrough left, no split is needed
-		if (xits.size() == nStaticComponents + 1 && xits.back()->isFallthrough(vs->index))
-      {
-         if (vs->index+1 == xits.back()->state)
-		      vs->partial = true;
+		// A trailing "stay" or a trailing "else -> next state" fits without a
+		// split.  "else -> next" is encoded with the INC bit, which in hardware
+		// also starts (or continues) the automatic loop: the following states'
+		// no-match path returns to the first INC state, so a set of conditions
+		// spread over consecutive states keeps being evaluated.  (The same INC
+		// joins the partial states created below.)
+		if (xits.size() == nStaticComponents + 1 &&
+		    (xits.back()->isStay(vs->index) || xits.back()->isNext(vs->index))) {
+			if (xits.back()->isNext(vs->index))
+				vs->partial = true;
 			break;
-      }
+		}
 
 		auto it = xits.begin();
 		std::advance(it, nStaticComponents);
@@ -54,9 +59,11 @@ void DecisionTree::splitState(std::list<std::shared_ptr<VirtualState>> &out,
 		lower->collectSteadyState(vs->partialOutput);
 
 		vs->partial = true;
+		vs->row = out.size();
 		out.push_back(vs);
 		vs = lower;
 	}
+	vs->row = out.size();
 	out.push_back(vs);
 }
 
@@ -80,18 +87,45 @@ void DecisionTree::writeState(Bitmask &out, const STEW &stew, const VirtualState
 
 	DEBUG("  Breakdown:\n");
 
+	// A trailing unconditional "stay" always takes the default (no-match)
+	// path, whatever the number of decision trees, so it never costs a tree
+	// and a split lower state still loops back to its upper half.
+	const bool trailingStay = !vs.transitions.empty() &&
+			vs.transitions.back()->isStay(vs.index);
+
+	// A trailing "else -> next state" behind at least one condition also
+	// takes the default path plus the INC bit even when a tree is still
+	// free, so that it starts / continues the automatic loop.  It must really
+	// be the next STEW row; otherwise (states declared out of order) it is
+	// left as an ordinary tree jump.  A lone unconditional jump has no
+	// "else" and stays a tree jump too.
+	bool trailingNext = false;
+	if (!vs.partial && vs.transitions.size() >= 2 &&
+	    vs.transitions.size() <= nStaticComponents &&
+	    vs.transitions.back()->isNext(vs.index)) {
+		auto it = stateMap.find(vs.transitions.back()->state);
+		trailingNext = (it != stateMap.end() && it->second == vs.row + 1);
+	}
+	if (vs.partial && vs.transitions.size() == nStaticComponents + 1) {
+		// INC chosen by splitState for a user "else -> next": check the row
+		auto it = stateMap.find(vs.transitions.back()->state);
+		ASSERTVS(vs, it != stateMap.end() && it->second == vs.row + 1,
+				"'else' to the next state must target the next declared state");
+	}
+
 	// write component output values and jump targets
 	comp = 0;
 	for (std::shared_ptr<StateTransition> x : vs.transitions) {
 		DEBUG("    %s\n", x->to_str().c_str());
-
-		STEW::Item stew_out = stew.slice(STEW::OUT, comp);
+		const bool isDefault = (comp == nStaticComponents) ||
+				((trailingStay || trailingNext) && x == vs.transitions.back());
+		STEW::Item stew_out = stew.slice(STEW::OUT,
+				isDefault ? nStaticComponents : comp);
 		ASSERTVS(vs, stew_out.type != STEW::NIL,
 				"STEW OUT configuration doesn't match"
 				" decision-tree configuration");
 		BitmaskSlice slice_out(out, stew_out.offset, stew_out.size);
-
-		if (comp != nStaticComponents) {
+		if (!isDefault) {
 			STEW::Item stew_jmp = stew.slice(STEW::JMP, comp);
 			ASSERTVS(vs, stew_jmp.type != STEW::NIL,
 					"STEW JMP configuration doesn't match"
@@ -112,6 +146,10 @@ void DecisionTree::writeState(Bitmask &out, const STEW &stew, const VirtualState
 	}
 
 	// set INC bit if needed
+	if (trailingNext) {
+		STEW::Item inc = stew.slice(STEW::INC, 0);
+		out.set(inc.offset);
+	}
 	if (vs.partial) {
 		STEW::Item inc = stew.slice(STEW::INC, 0);
 		STEW::Item stew_out = stew.slice(STEW::OUT, comp);
@@ -201,9 +239,14 @@ void DecisionTree::writeState(Bitmask &out, const STEW &stew, const VirtualState
 		STEW::Item stewi = stew.slice(STEW::CFG, comp);
 		BitmaskSlice slice(out, stewi.offset, stewi.size);
 
+		// unused decision trees must never fire (their jump target would be
+		// state 0); unused conditional outputs are simply low.  A row with no
+		// transitions at all (a state the chroma never defines) keeps the old
+		// behaviour of jumping to state 0 through tree 0, so a stray state
+		// index resets the FSM instead of parking it.
 		if (exprs[comp])
 			c->write(slice, sgrp, *exprs[comp]);
-		else if (comp < nStaticComponents)
+		else if (comp == 0 && vs.transitions.empty())
 			c->write(slice, sgrp, LogicTrueExpression());
 		else
 			c->write(slice, sgrp, LogicFalseExpression());
