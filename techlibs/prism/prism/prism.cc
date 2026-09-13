@@ -47,6 +47,9 @@ public:
       DEBUG("Version found\n");
 		} else if (node.str == "\\ctrl_reg") {
 			grp = new OffsetBitGroup(0x20000, node.range_left - node.range_right + 1);
+		} else if (node.str == "\\pinmux_reg") {
+			// per-shard uo_out pin mux configuration (7 x 3-bit selects)
+			grp = new OffsetBitGroup(0x30000, node.range_left - node.range_right + 1);
 		} else {
 			// ignore other wires until they show up in an assign
 			return;
@@ -420,9 +423,9 @@ public:
 		}
 	}
 
-	void write(Bitmask &out, const STEW &stew, const DecisionTree &tree, uint32_t &ctrlReg)
+	void write(Bitmask &out, const STEW &stew, const DecisionTree &tree, uint32_t &ctrlReg, uint32_t &pinmuxReg)
 	{
-		parseContextTree.writeStates(out, stew, tree, ctrlReg);
+		parseContextTree.writeStates(out, stew, tree, ctrlReg, pinmuxReg);
 	}
 };
 
@@ -505,6 +508,7 @@ class PrismImpl {
 	const STEW stewConfig;
 	const InputMux::Config muxConfig;
   uint32_t  ctrlReg;
+  uint32_t  pinmuxReg;
 public:
 	PrismImpl(const PrismConfig &cfg)
 	 : tree(cfg.tree), output(cfg.stew.size * cfg.stew.count), stewConfig(cfg.stew),
@@ -512,6 +516,7 @@ public:
 	{ 
     config = cfg.config;
     ctrlReg = 0;
+    pinmuxReg = 0;
   }
 
 	void parseAst(const AstNode &root)
@@ -519,7 +524,7 @@ public:
 		AstProcessor proc;
 
 		proc.processGlobalNode(root);
-		proc.write(output, stewConfig, tree, ctrlReg);
+		proc.write(output, stewConfig, tree, ctrlReg, pinmuxReg);
 	}
 
 	void writeTabOutput(std::ostream &os)
@@ -637,6 +642,7 @@ public:
     os << strutil::format("const uint32_t %s_width   = %d;\n", ::module_name.c_str(),
                 stewConfig.size);
     os << strutil::format("const uint32_t %s_ctrlReg = 0x%08X;\n",  ::module_name.c_str(), ctrlReg);
+    os << strutil::format("const uint32_t %s_pinmuxReg = 0x%08X;\n",  ::module_name.c_str(), pinmuxReg);
 	}
 
 	void writePythonOutput(std::ostream &os)
@@ -710,6 +716,7 @@ public:
     os << "]\n";
 
     os << strutil::format("%s_ctrlReg = 0x%08X\n",  ::module_name.c_str(), ctrlReg);
+    os << strutil::format("%s_pinmuxReg = 0x%08X\n",  ::module_name.c_str(), pinmuxReg);
 	}
 
 	void writeListOutput(std::ostream &os)

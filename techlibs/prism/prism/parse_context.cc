@@ -92,7 +92,7 @@ void ParseContextTree::State::collectConditionalOutputs(
 
 ParseContextTree::ParseContextTree(void)
  : activeState(NULL), defaultState(NULL), current(new Leaf()), parent(NULL)
-{ m_ctrlReg = 0;}
+{ m_ctrlReg = 0; m_pinmuxReg = 0; }
 
 ParseContextTree::~ParseContextTree(void)
 {
@@ -188,6 +188,9 @@ void ParseContextTree::assign(unsigned int bit, bool value)
 		} else {
 			activeState->mergeConditionalOutput(bit, expr, value);
 		}
+   } else if (bit >= 0x30000) {
+      bit -= 0x30000;
+      m_pinmuxReg |= value << bit;
    } else if (bit >= 0x20000) {
       bit -= 0x20000;
       m_ctrlReg |= value << bit;
@@ -272,7 +275,7 @@ void ParseContextTree::collectStateRecurse(std::list<std::shared_ptr<StateTransi
 }
 
 void ParseContextTree::writeStates(Bitmask &out, const STEW &stew, const DecisionTree &tree,
-      uint32_t &ctrlReg) const
+      uint32_t &ctrlReg, uint32_t &pinmuxReg) const
 {
 	std::list<std::shared_ptr<VirtualState>> outputStates;
 	std::map<unsigned int, unsigned int> stateMap;
@@ -280,6 +283,7 @@ void ParseContextTree::writeStates(Bitmask &out, const STEW &stew, const Decisio
 	const Node *root;
 
    ctrlReg = m_ctrlReg;
+   pinmuxReg = m_pinmuxReg;
 	for (root = current; root->parent != NULL; root = root->parent);
 
 	// collect and split all specified states

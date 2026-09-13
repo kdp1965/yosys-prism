@@ -140,6 +140,7 @@ class ParseContextTree {
 	Node *current;
 	Branch *parent;
    uint32_t m_ctrlReg;
+   uint32_t m_pinmuxReg;
 
 	void collectStateRecurse(std::list<std::shared_ptr<StateTransition>> &out,
 			const Node *node, LogicExpression *pexpr,
@@ -176,5 +177,5 @@ public:
 	// state case switch end
 	void exitStateSwitch(void);
 
-	void writeStates(Bitmask &out, const STEW &stew, const DecisionTree &tree, uint32_t &ctrlReg) const;
+	void writeStates(Bitmask &out, const STEW &stew, const DecisionTree &tree, uint32_t &ctrlReg, uint32_t &pinmuxReg) const;
 };
