@@ -221,6 +221,15 @@ public:
 			return new LogicOrExpression(childa, childb);
 		case AST::AST_IDENTIFIER:
 		case AST::AST_CONSTANT:
+		case AST::AST_BIT_NOT:
+		case AST::AST_BIT_AND:
+		case AST::AST_BIT_OR:
+		case AST::AST_BIT_XOR:
+		case AST::AST_BIT_XNOR:
+		case AST::AST_EQ:
+		case AST::AST_NE:
+			// a bit-level expression in a logical context (`(a ^ b) && c`,
+			// `!(a & b)`, `x == 2'd1 || y`): true when any of its bits is set
 			return new LogicReduceOrExpression(parseExpression(node));
 		default:
 			ASSERT_NODE(node, false, "unexpected node type");
